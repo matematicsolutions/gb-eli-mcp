@@ -51,7 +51,7 @@ class HttpCache:
     @staticmethod
     def ttl_for(category: str) -> int:
         match category:
-            case "act":
+            case "act" | "case":
                 return DEFAULT_TTL_ACT
             case "list" | "search":
                 return DEFAULT_TTL_LIST

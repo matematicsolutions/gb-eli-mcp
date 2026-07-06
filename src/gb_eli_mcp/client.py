@@ -22,7 +22,7 @@ from .cache import HttpCache
 
 DEFAULT_BASE_URL = "https://www.legislation.gov.uk"
 DEFAULT_TIMEOUT = httpx.Timeout(40.0, connect=10.0)
-USER_AGENT = "gb-eli-mcp/0.1.0 (+https://github.com/matematicsolutions/gb-eli-mcp)"
+USER_AGENT = "gb-eli-mcp/0.2.0 (+https://github.com/matematicsolutions/gb-eli-mcp)"
 
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
@@ -120,4 +120,111 @@ class UkLegislationClient:
 
     async def get_content(self, url: str, category: str = "act") -> str:
         """Fetch an arbitrary legislation.gov.uk URL verbatim (e.g. a specific manifestation)."""
+        return await self._get_text(url, category=category)
+
+
+DEFAULT_CASELAW_BASE_URL = "https://caselaw.nationalarchives.gov.uk"
+
+
+class FindCaseLawClient:
+    """Async client for The National Archives' Find Case Law service.
+
+    Same conventions as ``UkLegislationClient`` (retry/backoff, disk cache, no API key -
+    confirmed live 2026-07-06: every probed endpoint returns 200 with no credential).
+    Kept as a separate class - different host, different Atom dialect (``tna:`` namespace).
+    """
+
+    def __init__(
+        self,
+        base_url: str = DEFAULT_CASELAW_BASE_URL,
+        cache: HttpCache | None = None,
+        timeout: httpx.Timeout = DEFAULT_TIMEOUT,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._cache = cache or HttpCache()
+        self._http = httpx.AsyncClient(
+            timeout=timeout,
+            headers={"User-Agent": USER_AGENT},
+            follow_redirects=True,
+        )
+
+    async def __aenter__(self) -> FindCaseLawClient:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+        self._cache.close()
+
+    def _url(self, path: str) -> str:
+        if not path.startswith("/"):
+            path = "/" + path
+        return f"{self.base_url}{path}"
+
+    def _cache_key(self, url: str, params: dict[str, Any] | None) -> str:
+        if not params:
+            return url
+        items = sorted((k, v) for k, v in params.items() if v is not None)
+        return f"{url}?{urlencode(items, doseq=True)}"
+
+    async def _request_with_backoff(
+        self, url: str, params: dict[str, Any] | None
+    ) -> httpx.Response:
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                resp = await self._http.get(url, params=params)
+                resp.raise_for_status()
+                return resp
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                if exc.response.status_code not in _RETRY_STATUS or attempt == _MAX_ATTEMPTS - 1:
+                    raise
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                last_exc = exc
+                if attempt == _MAX_ATTEMPTS - 1:
+                    raise
+            await anyio.sleep(0.5 * (2**attempt))  # 0.5s, 1s
+        assert last_exc is not None
+        raise last_exc
+
+    async def _get_text(
+        self, path_or_url: str, *, params: dict[str, Any] | None = None, category: str
+    ) -> str:
+        url = path_or_url if path_or_url.startswith("http") else self._url(path_or_url)
+        key = self._cache_key(url, params)
+        cached = self._cache.get(key)
+        if cached is not None and isinstance(cached, str):
+            return cached
+        resp = await self._request_with_backoff(url, params)
+        text = resp.text
+        self._cache.set(key, text, ttl=HttpCache.ttl_for(category))
+        return text
+
+    # ----- typed endpoints -----------------------------------------------------
+
+    async def search_feed(self, params: dict[str, Any]) -> str:
+        """Fetch the Find Case Law Atom feed (``/atom.xml``).
+
+        Confirmed live query params (from the service's own OpenAPI spec):
+        ``query`` (full-text), ``court``/``tribunal`` (court code, e.g. 'ewhc/admin'),
+        ``party``, ``judge``, ``order`` (default '-date'), ``page`` (default 1),
+        ``per_page`` (default 50). No date-range param is documented or supported by
+        the upstream API as of this probe.
+        """
+        clean = {k: v for k, v in params.items() if v is not None}
+        return await self._get_text("/atom.xml", params=clean, category="search")
+
+    async def get_document_xml(self, uri_path: str) -> str:
+        """Fetch the Akoma Ntoso XML manifestation for a document URI path.
+
+        ``uri_path`` is e.g. ``/ewhc/admin/2026/1658`` (pre-2025 style) or
+        ``/d-f11e093f-8a53-4e43-8dd8-1531b5d8f018`` (opaque id, April 2025+).
+        """
+        return await self._get_text(f"{uri_path}/data.xml", category="case")
+
+    async def get_content(self, url: str, category: str = "case") -> str:
+        """Fetch an arbitrary Find Case Law URL verbatim (e.g. the PDF or HTML page)."""
         return await self._get_text(url, category=category)

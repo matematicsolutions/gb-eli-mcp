@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gb-eli-mcp"
-version = "0.1.0"
-description = "MCP server for UK legislation (legislation.gov.uk) — search and fetch Acts and Statutory Instruments with persistent identifiers and verifiable citations."
+version = "0.2.0"
+description = "MCP server for UK legislation (legislation.gov.uk) and case law (Find Case Law) — search and fetch Acts, Statutory Instruments and judgments with persistent identifiers and verifiable citations."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -13,7 +13,7 @@ authors = [
     { name = "Matematic Solutions", email = "kontakt@matematic.co" },
     { name = "Wieslaw Mazur", email = "mazur.wieslaw2022@gmail.com" },
 ]
-keywords = ["mcp", "legaltech", "united-kingdom", "uk", "legislation.gov.uk", "law"]
+keywords = ["mcp", "legaltech", "united-kingdom", "uk", "legislation.gov.uk", "law", "case-law", "find-case-law"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Legal Industry",

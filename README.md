@@ -26,7 +26,7 @@ contract against the UK's own source.
 > and adapting with attribution. This connector only relays that public content, with a
 > `source_url` on every response.
 
-## The four tools
+## The six tools
 
 | Tool | What it does |
 |---|---|
@@ -34,10 +34,14 @@ contract against the UK's own source.
 | `gb_get_act` | Fetch act/instrument metadata by reference (e.g. `ukpga/2018/12`). |
 | `gb_get_text` | Fetch the full text (`xml`, `html`, `akn`/Akoma Ntoso, `rdf`, `pdf`, `csv`). |
 | `gb_recent_legislation` | Legislation published since a date, newest-first, optionally by doc type. |
+| `gb_search_case_law` | Search UK judgments via The National Archives' Find Case Law Atom feed, by text, court, and date range. |
+| `gb_get_case` | Fetch a judgment by neutral citation, Find Case Law URI/path, or opaque id - returns Akoma Ntoso XML, or a PDF link fallback. |
 
 Every response carries the contract: `eli_uri`
 (e.g. `https://www.legislation.gov.uk/id/ukpga/2018/12`), `human_readable_citation`
-(e.g. `Data Protection Act 2018 c. 12`), and `source_url`.
+(e.g. `Data Protection Act 2018 c. 12`), and `source_url`. Case-law responses carry the
+same-spirit contract (`human_readable_citation`, `source_url`, `dataset_note`) - see
+`CONSTITUTION.md` Art. 5.
 
 ## Install
 
@@ -83,7 +87,9 @@ See `CONSTITUTION.md` (the binding rules) and `DISCOVERY.md` (the live API probe
 ```bash
 pip install -e ".[dev]"
 pytest tests/test_instructions_drift.py -v   # offline
+pytest tests/test_citations_case_law.py -v   # offline
 pytest tests/test_smoke.py -v                # hits live legislation.gov.uk
+pytest tests/test_smoke_case_law.py -v       # hits live caselaw.nationalarchives.gov.uk
 ```
 
 ## Licence

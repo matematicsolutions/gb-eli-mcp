@@ -251,6 +251,210 @@ def parse_legislation_xml(xml_text: str) -> dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# The National Archives' Find Case Law (caselaw.nationalarchives.gov.uk)
+#
+# A separate service from legislation.gov.uk (different host, different Atom
+# dialect - TNA namespace instead of leg:/ukm:), added for UK case law
+# coverage. Confirmed live 2026-07-06: keyless, public, Open Justice Licence.
+# See DISCOVERY.md "Find Case Law" section for the full live-probe record.
+# ---------------------------------------------------------------------------
+
+CASELAW_BASE_URL = "https://caselaw.nationalarchives.gov.uk"
+TNA_NS = "https://caselaw.nationalarchives.gov.uk"
+
+# Neutral citation court abbreviation -> Find Case Law URI court-path segment.
+# Only pre-April-2025 style citations resolve directly to a "/{court}/{year}/{number}"
+# URI (confirmed live: https://caselaw.nationalarchives.gov.uk/ewhc/admin/2026/1658).
+# Post-April-2025 documents use an opaque "d-{uuid}" URI instead (per the service's own
+# OpenAPI docs) and cannot be derived from the citation alone - gb_get_case falls back to
+# a query search for those.
+_NCN_RE = re.compile(
+    r"\[(?P<year>\d{4})\]\s*"
+    r"(?P<court>UKSC|UKPC|EWCA|EWHC|EWCOP|EWFC|UKUT|UKFTT|UKEAT|UKET|EAT)\s*"
+    r"(?P<division>Civ|Crim|Ch|Fam|Admin|Comm|TCC|Patents|IPEC|KB|QB|Mercantile)?\s*"
+    r"(?P<number>\d+)\s*"
+    r"(?:\((?P<paren_division>[\w\s]+)\))?",
+    re.IGNORECASE,
+)
+
+# Court codes that need no division sub-path (top-level courts).
+_COURT_NO_DIVISION = {"uksc", "ukpc", "ewca"}
+
+
+@dataclass(frozen=True)
+class NeutralCitation:
+    """A parsed UK neutral citation number (NCN), e.g. '[2026] EWHC 1658 (Admin)'."""
+
+    year: str
+    court: str  # lowercased, e.g. "ewhc"
+    division: str | None  # lowercased, e.g. "admin"
+    number: str
+    raw: str
+
+    @property
+    def court_path(self) -> str:
+        """Find Case Law URI court-path segment, e.g. 'ewhc/admin' or 'ewca/civ'."""
+        if self.division:
+            return f"{self.court}/{self.division}"
+        return self.court
+
+    @property
+    def uri_path(self) -> str:
+        """Best-effort Find Case Law URI path (pre-2025 style): '/{court}/{year}/{number}'."""
+        return f"/{self.court_path}/{self.year}/{self.number}"
+
+    @property
+    def data_xml_url(self) -> str:
+        return f"{CASELAW_BASE_URL}{self.uri_path}/data.xml"
+
+    @property
+    def html_url(self) -> str:
+        return f"{CASELAW_BASE_URL}{self.uri_path}"
+
+
+def parse_neutral_citation(value: str) -> NeutralCitation:
+    """Parse a UK neutral citation, e.g. ``"[2026] EWHC 1658 (Admin)"`` or
+    ``"[2024] EWCA Civ 12"``.
+
+    Raises ``ValueError`` on unparseable input.
+    """
+    raw = value.strip()
+    m = _NCN_RE.search(raw)
+    if m is None:
+        raise ValueError(
+            f"Not a recognisable UK neutral citation: {value!r}. "
+            f"Expected e.g. '[2026] EWHC 1658 (Admin)' or '[2024] EWCA Civ 12'."
+        )
+    court = m.group("court").lower()
+    division = (m.group("division") or m.group("paren_division") or "").strip().lower() or None
+    if division:
+        division = division.replace(" ", "")
+    if court in _COURT_NO_DIVISION and division is None:
+        pass  # e.g. UKSC, UKPC, and bare EWCA numbers with division inline already
+    return NeutralCitation(
+        year=m.group("year"),
+        court=court,
+        division=division,
+        number=m.group("number"),
+        raw=raw,
+    )
+
+
+def parse_caselaw_uri(value: str) -> str:
+    """Normalise a Find Case Law reference (URI, path, or bare id) to a URI path.
+
+    Accepts a full URL (``https://caselaw.nationalarchives.gov.uk/ewhc/admin/2026/1658``),
+    a bare path (``/ewhc/admin/2026/1658`` or ``ewhc/admin/2026/1658``), or an opaque
+    UUID-style id (``d-f11e093f-...``, used for documents published from April 2025
+    onward - see module docstring).
+    """
+    raw = value.strip()
+    if raw.startswith("http://") or raw.startswith("https://"):
+        after_scheme = raw.split("://", 1)[1]
+        path = after_scheme.split("/", 1)[1] if "/" in after_scheme else ""
+        raw = "/" + path
+    if not raw.startswith("/"):
+        raw = "/" + raw
+    # Strip a trailing /data.xml or similar manifestation suffix if present.
+    raw = re.sub(r"/data\.\w+$", "", raw)
+    return raw.rstrip("/")
+
+
+def human_readable_case_citation(neutral_citation: str | None, title: str | None) -> str:
+    """UK case citation convention: "{Case name} {Neutral Citation}"."""
+    if title and neutral_citation:
+        return f"{title} {neutral_citation}"
+    return neutral_citation or title or "Unknown case"
+
+
+def parse_caselaw_feed(atom_text: str) -> tuple[int, list[dict[str, Any]]]:
+    """Parse a Find Case Law Atom feed (``/atom.xml``) into ``(total_estimate, items)``.
+
+    Uses the ``tna:`` namespace (``https://caselaw.nationalarchives.gov.uk``) alongside
+    plain Atom. ``total_estimate`` is derived from the ``rel="last"`` pagination link's
+    ``page=`` query param x ``per_page`` (the feed does not expose a grand total field,
+    same limitation as legislation.gov.uk's search feed).
+    """
+    try:
+        root = ET.fromstring(atom_text)
+    except ET.ParseError as exc:
+        raise ValueError(f"Could not parse Find Case Law Atom feed: {exc}") from exc
+
+    last_pages = 1
+    per_page = 50
+    for link in root.findall(_q(ATOM_NS, "link")):
+        if link.get("rel") == "last":
+            href = link.get("href") or ""
+            m = re.search(r"page=(\d+)", href)
+            if m:
+                last_pages = int(m.group(1))
+            m2 = re.search(r"per_page=(\d+)", href)
+            if m2:
+                per_page = int(m2.group(1))
+
+    items: list[dict[str, Any]] = []
+    for entry in root.findall(_q(ATOM_NS, "entry")):
+        item: dict[str, Any] = {}
+        id_el = entry.find(_q(ATOM_NS, "id"))
+        if id_el is not None and id_el.text:
+            item["id"] = id_el.text.strip()
+        title_el = entry.find(_q(ATOM_NS, "title"))
+        if title_el is not None and title_el.text:
+            item["title"] = title_el.text.strip()
+        author_el = entry.find(_q(ATOM_NS, "author"))
+        if author_el is not None:
+            name_el = author_el.find(_q(ATOM_NS, "name"))
+            if name_el is not None and name_el.text:
+                item["court"] = name_el.text.strip()
+        published_el = entry.find(_q(ATOM_NS, "published"))
+        if published_el is not None and published_el.text:
+            item["date"] = published_el.text.strip()
+
+        # Prefer the identifier explicitly typed "ukncn" (neutral citation number) -
+        # confirmed live 2026-07-06. Some feed variants omit @type on that element, so
+        # fall back to "whichever identifier isn't @type='fclid'" if no ukncn is found.
+        fallback_citation: str | None = None
+        for identifier_el in entry.findall(_q(TNA_NS, "identifier")):
+            id_type = identifier_el.get("type")
+            if id_type == "ukncn" and identifier_el.text:
+                item["neutral_citation"] = identifier_el.text.strip()
+            elif id_type == "fclid" and identifier_el.text:
+                item["fclid"] = identifier_el.text.strip()
+            elif id_type is None and identifier_el.text:
+                fallback_citation = identifier_el.text.strip()
+        if "neutral_citation" not in item and fallback_citation:
+            item["neutral_citation"] = fallback_citation
+
+        uri_el = entry.find(_q(TNA_NS, "uri"))
+        if uri_el is not None and uri_el.text:
+            item["uri"] = uri_el.text.strip()
+
+        html_url = None
+        pdf_url = None
+        xml_url = None
+        for link in entry.findall(_q(ATOM_NS, "link")):
+            href = link.get("href") or ""
+            rel = link.get("rel")
+            if rel == "alternate" and not href.endswith((".pdf", ".xml")):
+                html_url = href
+            elif href.endswith(".pdf"):
+                pdf_url = href
+            elif href.endswith(".xml"):
+                xml_url = href
+        if html_url:
+            item["source_url"] = html_url
+        if pdf_url:
+            item["pdf_url"] = pdf_url
+        if xml_url:
+            item["akn_url"] = xml_url
+
+        items.append(item)
+
+    total_estimate = last_pages * per_page
+    return total_estimate, items
+
+
 def parse_search_feed(atom_text: str) -> tuple[int, list[dict[str, Any]]]:
     """Parse a legislation.gov.uk Atom search-results feed (``/data.feed``).
 

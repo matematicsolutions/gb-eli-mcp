@@ -1,16 +1,23 @@
 # Constitution of gb-eli-mcp
 
-Version: 0.1.0
+Version: 0.2.0
 Date: 2026-07-06
 Licence: Apache-2.0
 
-`gb-eli-mcp` is an MCP server for **legislation.gov.uk**, maintained by The National
-Archives - the official, public source of United Kingdom legislation (Acts of the UK
-Parliament, UK Statutory Instruments, and the equivalent instruments of the Scottish
-Parliament, Senedd Cymru/Welsh Parliament, and Northern Ireland Assembly). The MVP covers
-search, act/instrument metadata, full-text retrieval, and a recent-changes feed. Case
-law (UK courts, e.g. via The National Archives' Find Case Law / caselaw.nationalarchives.gov.uk)
-is a later, separate feature.
+`gb-eli-mcp` is an MCP server for **legislation.gov.uk** and **Find Case Law**
+(caselaw.nationalarchives.gov.uk), both maintained by The National Archives - the
+official, public sources of United Kingdom legislation (Acts of the UK Parliament, UK
+Statutory Instruments, and the equivalent instruments of the Scottish Parliament, Senedd
+Cymru/Welsh Parliament, and Northern Ireland Assembly) and UK case law (judgments of the
+Court of Appeal, High Court divisions, Upper Tribunal, First-tier Tribunal, Family Court,
+and other courts/tribunals). Legislation coverage (v0.1.0) has search, act/instrument
+metadata, full-text retrieval, and a recent-changes feed. Case law coverage (v0.2.0,
+added 2026-07-06) closes the connector's one remaining gap: `gb_search_case_law` and
+`gb_get_case` wrap the Find Case Law Atom feed - keyless, public, Open Justice Licence.
+Note: at the time this feature was built, the `worldwidelaw/legal-sources` catalog had
+**no UK/GB case-law collector** listed (confirmed by direct GitHub directory
+enumeration) - this is original work built from first-hand live verification of the Find
+Case Law service, not a port of an existing connector.
 
 The 4 principles below are inherited from the `eu-legal-mcp` line Constitution (Article IV).
 
@@ -18,11 +25,14 @@ The 4 principles below are inherited from the `eu-legal-mcp` line Constitution (
 
 ## Art. 1. Public data only
 
-`https://www.legislation.gov.uk` (The National Archives) is the official, public source of
-UK legislation. Content is published under the **Open Government Licence v3.0** (confirmed
-live from the site's own `/help` page footer: "Open Government Licence v3.0"), which permits
-copying, publishing and adapting with attribution. The server is read-only against
-legislation.gov.uk and sends nothing beyond the requested reference / search terms.
+`https://www.legislation.gov.uk` and `https://caselaw.nationalarchives.gov.uk` (both The
+National Archives) are the official, public sources of UK legislation and UK case law
+respectively. legislation.gov.uk content is published under the **Open Government Licence
+v3.0** (confirmed live from the site's own `/help` page footer). Find Case Law content is
+published under the **Open Justice Licence** (confirmed live from the feed's own licence
+link). Both permit copying, publishing and adapting with attribution. The server is
+read-only against both hosts and sends nothing beyond the requested reference / search
+terms.
 
 ## Art. 2. Mandatory audit log
 
@@ -33,10 +43,10 @@ Inability to write = the tool returns an error, it does not silently skip.
 ## Art. 3. Vendor neutrality
 
 No tool hardcodes an LLM provider, assumes a model, or introduces commercial telemetry. The
-server communicates only with `www.legislation.gov.uk` and the local filesystem.
-Authentication: **no API key** (confirmed live - every probed endpoint returned 200 with no
-credential). No documented rate limit; own backoff + cache regardless (this factory's
-standing policy).
+server communicates only with `www.legislation.gov.uk`, `caselaw.nationalarchives.gov.uk`,
+and the local filesystem. Authentication: **no API key** on either host (confirmed live -
+every probed endpoint on both services returned 200 with no credential). No documented rate
+limit on either service; own backoff + cache regardless (this factory's standing policy).
 
 ## Art. 4. Persistent identifier and human-readable citation are mandatory
 
@@ -58,6 +68,19 @@ Every response MUST carry three fields:
 - `source_url`: the browsable legislation.gov.uk page for that version (work or point-in-time
   expression).
 
+## Art. 5. Case-law citation contract (Find Case Law)
+
+Every `gb_search_case_law` / `gb_get_case` response MUST carry:
+
+- `human_readable_citation`: the UK neutral citation convention combined with the case
+  name where available, e.g. `"Example v Another Example [2026] EWHC 1658 (Admin)"`.
+- `source_url`: the browsable Find Case Law page for the judgment.
+- `dataset_note`: restates that Find Case Law is a separate service from
+  legislation.gov.uk with its own identifier scheme, and that only pre-April-2025
+  documents have a URI derivable directly from the neutral citation
+  (`/{court}/{year}/{number}`) - documents from April 2025 onward use an opaque
+  `d-{uuid}` id (`fclid`) that requires a search round-trip to resolve.
+
 ---
 
 ## Open points (do not block the build)
@@ -72,14 +95,23 @@ Every response MUST carry three fields:
    a general-purpose query language. `gb_search`'s `total_estimate` is derived from
    `itemsPerPage x morePages` (the feed does not expose a grand total) and is therefore
    approximate.
-3. **Case law.** UK court decisions (Find Case Law, caselaw.nationalarchives.gov.uk) are a
-   separate National Archives service with its own API; a later, separate tool family.
+3. **Case law - resolved in v0.2.0.** UK court decisions (Find Case Law,
+   caselaw.nationalarchives.gov.uk) are covered by `gb_search_case_law`/`gb_get_case`. One
+   residual limitation: the public API has no documented server-side date-range filter, so
+   `from_date`/`to_date` are applied client-side after fetching (same class of limitation as
+   legislation.gov.uk's search feed having no cross-type `dateFrom`). A second residual
+   limitation: documents published from April 2025 onward use an opaque `d-{uuid}` URI that
+   cannot be derived from the neutral citation alone (pre-2025 documents can).
 4. **Devolved-legislature nuance.** Wales SIs (`wsi`) are numbered in the shared UK S.I. series
    unless suffixed "(W.)"; the citation helper labels them `S.I.` accordingly, which is a
    simplification worth revisiting if a client needs the Welsh-specific numbering distinction.
 
 ## Constitution evolution
 
-Changes to art. 1-4 follow SEMVER + an entry in `CHANGELOG.md` + a `pyproject.toml` bump.
+Changes to art. 1-5 follow SEMVER + an entry in `CHANGELOG.md` + a `pyproject.toml` bump.
+
+- **v0.2.0 (2026-07-06):** added Art. 5 (case-law citation contract) and extended Art. 1/3
+  to cover the second host (`caselaw.nationalarchives.gov.uk`), following the addition of
+  `gb_search_case_law`/`gb_get_case`. Art. 1-4 substance unchanged for legislation.gov.uk.
 
 First version: 2026-07-06. Author: Wieslaw Mazur / MateMatic.

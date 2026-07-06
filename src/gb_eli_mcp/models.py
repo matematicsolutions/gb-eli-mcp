@@ -117,3 +117,78 @@ class LegislationText(_Tolerant):
 
 class RecentChangeInfo(LegislationInfo):
     """An item from ``gb_recent_legislation``."""
+
+
+# --- Case law (Find Case Law - caselaw.nationalarchives.gov.uk) --------------------
+
+CASE_LAW_DATASET_NOTE = (
+    "caselaw.nationalarchives.gov.uk (Find Case Law, The National Archives) publishes "
+    "judgments under the Open Justice Licence - a separate service from legislation.gov.uk "
+    "(different host, no shared identifier scheme). Pre-April-2025 documents have a "
+    "derivable URI ('/{court}/{year}/{number}'); documents from April 2025 onward use an "
+    "opaque 'd-{uuid}' URI (fclid) that cannot be derived from the neutral citation alone. "
+    "human_readable_citation is the neutral citation, e.g. '[2026] EWHC 1698 (Admin)'."
+)
+
+
+class CaseLawInfo(_Tolerant):
+    """Lightweight case-law record - from a Find Case Law search/feed item."""
+
+    neutral_citation: str | None = None
+    court: str | None = None
+    title: str | None = None
+    date: str | None = None
+    fclid: str | None = None  # opaque "d-{uuid}" identifier, if present
+    uri: str | None = None  # the tna:uri document UUID
+
+    # Enrichments added by our server (Art. 4 CONSTITUTION parity for case law).
+    human_readable_citation: str | None = None
+    source_url: str | None = None
+    pdf_url: str | None = None
+    akn_url: str | None = None
+
+
+class CaseLawSearchQuery(_Tolerant):
+    """Arguments for the ``gb_search_case_law`` tool."""
+
+    query: str | None = None
+    court: str | None = Field(
+        default=None,
+        description="Court code, e.g. 'ewhc/admin', 'uksc', 'ukpc'. Omit to search all courts.",
+    )
+    from_date: str | None = Field(
+        default=None,
+        description=(
+            "ISO 8601 date (YYYY-MM-DD), inclusive. Find Case Law's public API has no "
+            "documented server-side date-range filter, so this is applied client-side "
+            "against each result's 'date' field after fetching."
+        ),
+    )
+    to_date: str | None = Field(default=None, description="ISO 8601 date (YYYY-MM-DD), inclusive.")
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class CaseLawSearchResult(_Tolerant):
+    """Result of ``gb_search_case_law``."""
+
+    total_estimate: int
+    items: list[CaseLawInfo] = Field(default_factory=list)
+    query_echo: CaseLawSearchQuery | None = None
+    dataset_note: str = CASE_LAW_DATASET_NOTE
+
+
+class CaseLawDocument(_Tolerant):
+    """Result of ``gb_get_case``."""
+
+    neutral_citation: str | None = None
+    court: str | None = None
+    title: str | None = None
+    date: str | None = None
+
+    human_readable_citation: str
+    source_url: str
+    format: Literal["akn", "pdf"] = "akn"
+    content: str | None = None
+    pdf_url: str | None = None
+    byte_size: int | None = None
+    dataset_note: str = CASE_LAW_DATASET_NOTE

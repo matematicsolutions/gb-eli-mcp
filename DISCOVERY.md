@@ -119,3 +119,37 @@ Build `gb-eli-mcp` per the factory skeleton: `client.py` (httpx + cache, `/data.
 negotiation), `citations.py` (reference parsing + UK citation convention +
 `legislation.xsd`/Atom parsing via stdlib `ElementTree`), `models.py` (tolerant Pydantic v2),
 `server.py` (4 tools: `gb_search`, `gb_get_act`, `gb_get_text`, `gb_recent_legislation`).
+
+## v0.2.0 - Case law added (The National Archives' Find Case Law)
+
+Date: 2026-07-06 (same day, second pass - cross-fleet audit found this connector was
+legislation-only with zero case-law coverage, the one gap common to all four non-EU
+connectors probed that day: IL, US, GB, BR).
+
+Unlike US (`us-eli-mcp` correctly rejected CourtListener - two MIT wrappers already exist)
+and BR (DataJud CNJ is real but redistribution-restricted under Resolucao CNJ 446/2022),
+**GB had no prior doctrine conflict and no legal restriction** - `worldwidelaw/legal-sources`
+does not catalog any UK/GB case-law collector at all (confirmed by direct GitHub directory
+enumeration: the `sources/` tree has no `GB` or `UK` entry), so this is original discovery,
+not a port of anyone else's work.
+
+- **Source:** `caselaw.nationalarchives.gov.uk` (Find Case Law, The National Archives) -
+  confirmed live 2026-07-06: keyless, every probed endpoint returns 200, Open Justice
+  Licence. Separate host and separate Atom dialect (`tna:` namespace) from
+  legislation.gov.uk - kept as a distinct `FindCaseLawClient` class in `client.py` rather
+  than merged into `UkLegislationClient`.
+- **Coverage:** Court of Appeal (Civil/Criminal), High Court (Admin/Chancery/Commercial/
+  KB), Upper Tribunal, First-tier Tribunal, Family Court, UK Supreme Court, Privy Council -
+  confirmed via a live `/atom.xml` fetch returning real entries with neutral citations
+  (e.g. `[2026] EWHC 1698 (Admin)`), ~7600 pages at the time of writing.
+- **New tools:** `gb_search_case_law(query, court, from_date, to_date, limit)` and
+  `gb_get_case(reference)` - added to `server.py`, wired through `FindCaseLawClient`
+  (`client.py`), `CaseLawInfo`/`CaseLawDocument`/`CaseLawSearchResult` models (`models.py`),
+  and neutral-citation parsing (`citations.py`).
+- **Known limitation, documented not worked around:** Find Case Law's public feed has no
+  server-side date-range filter (confirmed against its own OpenAPI spec) - `from_date`/
+  `to_date` are applied client-side after fetching. Documents published from April 2025
+  onward use an opaque `d-{uuid}` id that cannot be derived from a neutral citation alone;
+  `gb_get_case` resolves those via `gb_search_case_law` first, not by guessing a URI.
+- **Tests:** `tests/test_smoke_case_law.py` added alongside the existing
+  `tests/test_smoke.py` and `tests/test_instructions_drift.py`. Full suite: 31 passed.

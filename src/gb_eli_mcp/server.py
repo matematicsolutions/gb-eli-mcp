@@ -1,4 +1,7 @@
-"""FastMCP entry point - 4 super-tools for legislation.gov.uk (UK legislation).
+"""FastMCP entry point - 6 tools for UK legislation + case law.
+
+4 tools wrap legislation.gov.uk (UK legislation); 2 wrap The National Archives' Find
+Case Law service (UK case law - a separate host, added for case-law coverage).
 
 Run:
 
@@ -9,11 +12,13 @@ Configuration via env:
 - ``GB_ELI_CACHE_DIR`` (default ``~/.matematic/cache/gb-eli``)
 - ``GB_ELI_AUDIT_DIR`` (default ``~/.matematic/audit``)
 - ``GB_ELI_BASE_URL`` (default ``https://www.legislation.gov.uk``)
+- ``GB_ELI_CASELAW_BASE_URL`` (default ``https://caselaw.nationalarchives.gov.uk``)
 """
 
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 import httpx
@@ -23,12 +28,20 @@ from mcp.types import ToolAnnotations
 from .audit import AuditLogger, hash_input, timer
 from .citations import (
     enrich_legislation_payload,
+    human_readable_case_citation,
+    parse_caselaw_feed,
+    parse_caselaw_uri,
     parse_legislation_xml,
+    parse_neutral_citation,
     parse_reference,
     parse_search_feed,
 )
-from .client import DEFAULT_BASE_URL, UkLegislationClient
+from .client import DEFAULT_BASE_URL, FindCaseLawClient, UkLegislationClient
 from .models import (
+    CaseLawDocument,
+    CaseLawInfo,
+    CaseLawSearchQuery,
+    CaseLawSearchResult,
     Legislation,
     LegislationInfo,
     LegislationText,
@@ -61,6 +74,10 @@ This MCP server exposes legislation.gov.uk, The National Archives' official port
 ### Monitoring changes
 4. `gb_recent_legislation` - legislation published since `since_iso` (ISO 8601), newest-first, optionally filtered by `doc_type`. Useful for a law-monitoring feature.
 
+### Case law (The National Archives' Find Case Law - a separate service, separate host)
+5. `gb_search_case_law` - full-text search of UK judgments via the public Find Case Law Atom feed (`caselaw.nationalarchives.gov.uk/atom.xml`). Filter by `court` (e.g. `ewhc/admin`, `ewca/civ`, `uksc`), `from_date`/`to_date` (applied client-side - see Hard constraints), paginate with `limit`.
+6. `gb_get_case` - fetch a judgment by neutral citation (e.g. `"[2026] EWHC 1698 (Admin)"`) or a Find Case Law URI/path. Returns Akoma Ntoso XML content when derivable, else the PDF link.
+
 ## Hard constraints
 
 - **UK document-type codes are the key to a reference** - a reference is `{doc_type}/{year}/{number}`, e.g. `ukpga/2018/12` (UK Public General Act), `uksi/2019/419` (UK Statutory Instrument), `asp/2015/1` (Act of the Scottish Parliament), `nia/2016/8` (Act of the Northern Ireland Assembly), `wsi/2020/1` (Wales Statutory Instrument). Do not invent a reference; get it from `gb_search` or from a response's `eli_uri`.
@@ -69,13 +86,15 @@ This MCP server exposes legislation.gov.uk, The National Archives' official port
 - **Revised vs original text** - legislation.gov.uk publishes a continuously revised ("as amended") text as well as the "as enacted"/"as made" original; a response's `restrict_start_date` shows the point-in-time in force. Always relay the `dataset_note` and flag when a provision may be affected by an unapplied/pending amendment.
 - **Audit log JSONL** - every tool call appends to `~/.matematic/audit/gb-eli-mcp.jsonl` (metadata + input hash only).
 - **Stateless** - every call hits the upstream site; cache TTL lives client-side.
+- **Find Case Law has no documented date-range filter** - `gb_search_case_law`'s `from_date`/`to_date` are applied client-side against each result's `date` field after fetching, not passed upstream as query params (confirmed against the service's own OpenAPI spec, 2026-07-06).
+- **Neutral citation URI derivation is best-effort** - `gb_get_case` can build a Find Case Law URI directly from a pre-April-2025-style neutral citation (`/{court}/{year}/{number}`), but documents published from April 2025 onward use an opaque `d-{uuid}` id that cannot be derived from the citation alone; those require `gb_search_case_law` first to resolve the id.
 
 ## Error iteration
 
 Tools return a structured error with a `[code]` prefix:
-- `invalid_arg` - a reference or parameter is malformed (e.g. bad `doc_type/year/number`, unsupported `format`, out-of-range `page`).
-- `not_found` - the act/instrument does not exist at that reference, or the requested manifestation format is unavailable. Try `gb_search` to locate it.
-- `upstream_error` - a legislation.gov.uk error (HTTP, timeout, malformed XML/Atom). Retry once before surfacing to the user.
+- `invalid_arg` - a reference or parameter is malformed (e.g. bad `doc_type/year/number`, unsupported `format`, out-of-range `page`, unparseable neutral citation).
+- `not_found` - the act/instrument/case does not exist at that reference, or the requested manifestation format is unavailable. Try `gb_search`/`gb_search_case_law` to locate it.
+- `upstream_error` - a legislation.gov.uk or Find Case Law error (HTTP, timeout, malformed XML/Atom). Retry once before surfacing to the user.
 
 ## Response style
 
@@ -117,6 +136,12 @@ def _base_url() -> str:
     return os.environ.get("GB_ELI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
+def _caselaw_base_url() -> str:
+    from .client import DEFAULT_CASELAW_BASE_URL
+
+    return os.environ.get("GB_ELI_CASELAW_BASE_URL", DEFAULT_CASELAW_BASE_URL).rstrip("/")
+
+
 def _audit() -> AuditLogger:
     return AuditLogger()
 
@@ -129,6 +154,20 @@ def _map_http_error(exc: Exception) -> Exception:
         )
     if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
         return GbEliError("upstream_error", f"legislation.gov.uk error: {type(exc).__name__}: {exc}")
+    return exc
+
+
+def _map_caselaw_http_error(exc: Exception) -> Exception:
+    """Translate an httpx 404 into a structured not_found; otherwise upstream_error."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return GbEliError(
+            "not_found",
+            "Case not found at that reference. Try gb_search_case_law to locate it.",
+        )
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return GbEliError(
+            "upstream_error", f"caselaw.nationalarchives.gov.uk error: {type(exc).__name__}: {exc}"
+        )
     return exc
 
 
@@ -474,6 +513,234 @@ async def gb_recent_legislation(
         status="ok",
     )
     return items
+
+
+# ---------------------------------------------------------------------------
+# gb_search_case_law
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def gb_search_case_law(
+    query: str | None = None,
+    court: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    limit: int = 20,
+) -> CaseLawSearchResult:
+    """Search UK case law on The National Archives' Find Case Law service.
+
+    Maps to the public Atom feed at ``caselaw.nationalarchives.gov.uk/atom.xml``
+    (confirmed live 2026-07-06 - keyless, Open Justice Licence). A separate service from
+    legislation.gov.uk: different host, different Atom dialect (``tna:`` namespace).
+
+    Args:
+        query: full-text search (matches judgment text in order, per upstream docs).
+        court: court/tribunal code, e.g. ``"ewhc/admin"``, ``"ewca/civ"``, ``"uksc"``.
+            Passed through to Find Case Law's own ``court`` query param.
+        from_date: ISO 8601 date (YYYY-MM-DD), inclusive. Find Case Law's public API has
+            no documented server-side date-range filter, so this is applied client-side
+            against each result's ``date`` field after fetching.
+        to_date: ISO 8601 date (YYYY-MM-DD), inclusive. Same client-side caveat.
+        limit: max items to return (1..100).
+
+    Returns:
+        ``CaseLawSearchResult`` with ``total_estimate`` and ``items: list[CaseLawInfo]``.
+    """
+    audit = _audit()
+    input_hash = hash_input(
+        {"query": query, "court": court, "from_date": from_date, "to_date": to_date, "limit": limit}
+    )
+    base = _caselaw_base_url()
+
+    if not 1 <= limit <= 100:
+        raise GbEliError("invalid_arg", f"limit={limit} out of range 1..100.")
+    for label, value in (("from_date", from_date), ("to_date", to_date)):
+        if value is not None and (len(value) < 10 or value[4] != "-" or value[7] != "-"):
+            raise GbEliError("invalid_arg", f"{label}={value!r} must be ISO 8601 (YYYY-MM-DD).")
+
+    params: dict[str, Any] = {
+        "query": query,
+        "court": court,
+        "per_page": min(limit, 50),
+    }
+
+    with timer() as t:
+        try:
+            async with FindCaseLawClient(base_url=base) as client:
+                raw = await client.search_feed(dict(params))
+        except Exception as exc:
+            audit.log(
+                tool="gb_search_case_law",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_caselaw_http_error(exc) from exc
+
+    try:
+        total, items_raw = parse_caselaw_feed(raw)
+    except ValueError as exc:
+        audit.log(
+            tool="gb_search_case_law",
+            input_hash=input_hash,
+            output_count_or_size=0,
+            duration_ms=t.duration_ms,
+            status="error",
+            error=str(exc),
+        )
+        raise GbEliError("upstream_error", str(exc)) from exc
+
+    if from_date is not None:
+        items_raw = [it for it in items_raw if (it.get("date") or "") >= from_date]
+    if to_date is not None:
+        items_raw = [it for it in items_raw if (it.get("date") or "9999-99-99") <= to_date]
+
+    items: list[CaseLawInfo] = []
+    for raw_item in items_raw[:limit]:
+        enriched = dict(raw_item)
+        enriched["human_readable_citation"] = human_readable_case_citation(
+            raw_item.get("neutral_citation"), raw_item.get("title")
+        )
+        items.append(CaseLawInfo.model_validate(enriched))
+
+    result = CaseLawSearchResult(
+        total_estimate=total,
+        items=items,
+        query_echo=CaseLawSearchQuery(
+            query=query, court=court, from_date=from_date, to_date=to_date, limit=limit
+        ),
+    )
+
+    audit.log(
+        tool="gb_search_case_law",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# gb_get_case
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def gb_get_case(reference: str) -> CaseLawDocument:
+    """Fetch a UK judgment from The National Archives' Find Case Law service.
+
+    Args:
+        reference: a neutral citation (e.g. ``"[2026] EWHC 1698 (Admin)"``), a Find Case
+            Law URI/path (e.g. ``"ewhc/admin/2026/1698"`` or a full
+            ``caselaw.nationalarchives.gov.uk`` URL), or an opaque ``"d-{uuid}"`` id.
+            Neutral citations resolve directly to a URI only for pre-April-2025 documents
+            (``/{court}/{year}/{number}``); for later documents (opaque id), use
+            `gb_search_case_law` first to find the ``uri``.
+
+    Returns:
+        ``CaseLawDocument`` with ``human_readable_citation``, ``source_url``, and the
+        Akoma Ntoso XML ``content`` (or a ``pdf_url`` fallback if XML is unavailable).
+    """
+    audit = _audit()
+    input_hash = hash_input({"reference": reference})
+    base = _caselaw_base_url()
+
+    raw = reference.strip()
+    try:
+        if raw.startswith("["):
+            ncn = parse_neutral_citation(raw)
+            uri_path = ncn.uri_path
+            neutral_citation = ncn.raw
+        else:
+            uri_path = parse_caselaw_uri(raw)
+            neutral_citation = None
+    except ValueError as exc:
+        raise GbEliError("invalid_arg", str(exc)) from exc
+
+    source_url = f"{base}{uri_path}"
+    # PDF asset host mirrors the doc URI path as a single slug: uri_path "/ewhc/admin/2026/1698"
+    # -> id "ewhc-admin-2026-1698" -> ".../{id}/{id}.pdf" (confirmed live pattern; best-effort,
+    # not guaranteed for opaque "d-{uuid}" ids where the id itself already contains no slashes).
+    _pdf_id = uri_path.strip("/").replace("/", "-")
+    pdf_url = f"https://assets.caselaw.nationalarchives.gov.uk/{_pdf_id}/{_pdf_id}.pdf"
+
+    xml_text: str | None = None
+    akn_error: Exception | None = None
+    with timer() as t:
+        try:
+            async with FindCaseLawClient(base_url=base) as client:
+                xml_text = await client.get_document_xml(uri_path)
+        except Exception as exc:
+            akn_error = exc
+
+        if xml_text is None:
+            # AKN+XML fetch failed - fall back to the PDF link with whatever metadata we
+            # already have (best-effort; we do NOT attempt to parse the PDF binary).
+            mapped = _map_caselaw_http_error(akn_error) if akn_error is not None else None
+            if isinstance(mapped, GbEliError) and mapped.code == "not_found":
+                audit.log(
+                    tool="gb_get_case",
+                    input_hash=input_hash,
+                    output_count_or_size=0,
+                    duration_ms=t.duration_ms if t.duration_ms else 0,
+                    status="error",
+                    error=f"{type(akn_error).__name__}: {akn_error}" if akn_error else "not_found",
+                )
+                raise mapped from akn_error
+
+            doc = CaseLawDocument(
+                neutral_citation=neutral_citation,
+                human_readable_citation=human_readable_case_citation(neutral_citation, None),
+                source_url=source_url,
+                format="pdf",
+                content=None,
+                pdf_url=pdf_url,
+                byte_size=None,
+            )
+            audit.log(
+                tool="gb_get_case",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="ok",
+                error=(
+                    f"AKN+XML unavailable, PDF-only fallback: "
+                    f"{type(akn_error).__name__}: {akn_error}"
+                    if akn_error
+                    else None
+                ),
+            )
+            return doc
+
+    if neutral_citation is None:
+        m = re.search(r"\[\d{4}\]\s*\w+.*?\d+\s*(?:\([\w\s]+\))?", xml_text)
+        neutral_citation = m.group(0).strip() if m else None
+
+    title_match = re.search(r"<FRBRalias[^>]*value=\"([^\"]+)\"", xml_text)
+    title = title_match.group(1) if title_match else None
+
+    doc = CaseLawDocument(
+        title=title,
+        neutral_citation=neutral_citation,
+        human_readable_citation=human_readable_case_citation(neutral_citation, title),
+        source_url=source_url,
+        format="akn",
+        content=xml_text,
+        byte_size=len(xml_text.encode("utf-8")),
+    )
+
+    audit.log(
+        tool="gb_get_case",
+        input_hash=input_hash,
+        output_count_or_size=doc.byte_size or 0,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return doc
 
 
 # ---------------------------------------------------------------------------
