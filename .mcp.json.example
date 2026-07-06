@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gb-eli-mcp": {
+      "command": "gb-eli-mcp",
+      "env": {
+        "GB_ELI_BASE_URL": "https://www.legislation.gov.uk",
+        "GB_ELI_CACHE_DIR": "~/.matematic/cache/gb-eli",
+        "GB_ELI_AUDIT_DIR": "~/.matematic/audit"
+      }
+    }
+  }
+}
