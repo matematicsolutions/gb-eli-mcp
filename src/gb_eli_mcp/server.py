@@ -1,7 +1,9 @@
-"""FastMCP entry point - 6 tools for UK legislation + case law.
+"""FastMCP entry point - 8 tools for UK legislation, case law + GOV.UK documents.
 
 4 tools wrap legislation.gov.uk (UK legislation); 2 wrap The National Archives' Find
-Case Law service (UK case law - a separate host, added for case-law coverage).
+Case Law service (UK case law - a separate host, added in v0.2.0); 2 wrap the GOV.UK
+Search API + Content API (tribunal decisions, HMRC manuals, CMA cases - added in
+v0.3.0, feature-003).
 
 Run:
 
@@ -13,6 +15,7 @@ Configuration via env:
 - ``GB_ELI_AUDIT_DIR`` (default ``~/.matematic/audit``)
 - ``GB_ELI_BASE_URL`` (default ``https://www.legislation.gov.uk``)
 - ``GB_ELI_CASELAW_BASE_URL`` (default ``https://caselaw.nationalarchives.gov.uk``)
+- ``GB_ELI_GOVUK_BASE_URL`` (default ``https://www.gov.uk``)
 """
 
 from __future__ import annotations
@@ -29,19 +32,31 @@ from .audit import AuditLogger, hash_input, timer
 from .citations import (
     enrich_legislation_payload,
     human_readable_case_citation,
+    human_readable_govuk_citation,
     parse_caselaw_feed,
     parse_caselaw_uri,
+    parse_govuk_content_json,
+    parse_govuk_search_json,
     parse_legislation_xml,
     parse_neutral_citation,
     parse_reference,
     parse_search_feed,
 )
-from .client import DEFAULT_BASE_URL, FindCaseLawClient, UkLegislationClient
+from .client import (
+    DEFAULT_BASE_URL,
+    FindCaseLawClient,
+    GovUkSearchClient,
+    UkLegislationClient,
+)
 from .models import (
     CaseLawDocument,
     CaseLawInfo,
     CaseLawSearchQuery,
     CaseLawSearchResult,
+    GovUkContent,
+    GovUkDocumentInfo,
+    GovUkSearchQuery,
+    GovUkSearchResult,
     Legislation,
     LegislationInfo,
     LegislationText,
@@ -78,6 +93,10 @@ This MCP server exposes legislation.gov.uk, The National Archives' official port
 5. `gb_search_case_law` - full-text search of UK judgments via the public Find Case Law Atom feed (`caselaw.nationalarchives.gov.uk/atom.xml`). Filter by `court` (e.g. `ewhc/admin`, `ewca/civ`, `uksc`), `from_date`/`to_date` (applied client-side - see Hard constraints), paginate with `limit`.
 6. `gb_get_case` - fetch a judgment by neutral citation (e.g. `"[2026] EWHC 1698 (Admin)"`) or a Find Case Law URI/path. Returns Akoma Ntoso XML content when derivable, else the PDF link.
 
+### GOV.UK documents (tribunal decisions, HMRC manuals, CMA cases - www.gov.uk, a third host)
+7. `gb_search_govuk` - full-text search of GOV.UK via its Search API (`/api/search.json`, keyless). Filter by `document_type` - the legally weighty ones with live-verified totals (2026-07-07): `employment_tribunal_decision` (132,162), `hmrc_manual_section` (85,315), `residential_property_tribunal_decision` (17,088), `employment_appeal_tribunal_decision` (2,571), `cma_case` (2,565), `utaac_decision` (2,031), `tax_tribunal_decision` (1,414), `asylum_support_decision` (101). Also `organisation`, `from_date`/`to_date` (server-side, unlike Find Case Law), `limit`, `start`.
+8. `gb_get_govuk_content` - fetch one GOV.UK document by its `link` path via the Content API (`/api/content/{path}`). Tribunal decisions return metadata + the judgment PDF in `attachments`; HMRC manual sections return the full text in `body_html`.
+
 ## Hard constraints
 
 - **UK document-type codes are the key to a reference** - a reference is `{doc_type}/{year}/{number}`, e.g. `ukpga/2018/12` (UK Public General Act), `uksi/2019/419` (UK Statutory Instrument), `asp/2015/1` (Act of the Scottish Parliament), `nia/2016/8` (Act of the Northern Ireland Assembly), `wsi/2020/1` (Wales Statutory Instrument). Do not invent a reference; get it from `gb_search` or from a response's `eli_uri`.
@@ -88,13 +107,15 @@ This MCP server exposes legislation.gov.uk, The National Archives' official port
 - **Stateless** - every call hits the upstream site; cache TTL lives client-side.
 - **Find Case Law has no documented date-range filter** - `gb_search_case_law`'s `from_date`/`to_date` are applied client-side against each result's `date` field after fetching, not passed upstream as query params (confirmed against the service's own OpenAPI spec, 2026-07-06).
 - **Neutral citation URI derivation is best-effort** - `gb_get_case` can build a Find Case Law URI directly from a pre-April-2025-style neutral citation (`/{court}/{year}/{number}`), but documents published from April 2025 onward use an opaque `d-{uuid}` id that cannot be derived from the citation alone; those require `gb_search_case_law` first to resolve the id.
+- **GOV.UK documents have no neutral citation or ELI** - `gb_search_govuk`/`gb_get_govuk_content` responses carry `human_readable_citation` as "{Title} ({document type}, {date}, GOV.UK)" plus `source_url`; a GOV.UK tribunal decision's authoritative text is the judgment PDF in `attachments`, NOT the short HTML body. Do not present the HTML body of a tribunal decision as the full judgment.
+- **GOV.UK search totals are real** - `gb_search_govuk`'s `total` is the Search API's own dedicated total field (verified live against the per-type facet counts, 2026-07-07), not a page-count estimate.
 
 ## Error iteration
 
 Tools return a structured error with a `[code]` prefix:
 - `invalid_arg` - a reference or parameter is malformed (e.g. bad `doc_type/year/number`, unsupported `format`, out-of-range `page`, unparseable neutral citation).
 - `not_found` - the act/instrument/case does not exist at that reference, or the requested manifestation format is unavailable. Try `gb_search`/`gb_search_case_law` to locate it.
-- `upstream_error` - a legislation.gov.uk or Find Case Law error (HTTP, timeout, malformed XML/Atom). Retry once before surfacing to the user.
+- `upstream_error` - a legislation.gov.uk, Find Case Law or GOV.UK error (HTTP, timeout, malformed XML/Atom/JSON). Retry once before surfacing to the user.
 
 ## Response style
 
@@ -142,6 +163,12 @@ def _caselaw_base_url() -> str:
     return os.environ.get("GB_ELI_CASELAW_BASE_URL", DEFAULT_CASELAW_BASE_URL).rstrip("/")
 
 
+def _govuk_base_url() -> str:
+    from .client import DEFAULT_GOVUK_BASE_URL
+
+    return os.environ.get("GB_ELI_GOVUK_BASE_URL", DEFAULT_GOVUK_BASE_URL).rstrip("/")
+
+
 def _audit() -> AuditLogger:
     return AuditLogger()
 
@@ -168,6 +195,18 @@ def _map_caselaw_http_error(exc: Exception) -> Exception:
         return GbEliError(
             "upstream_error", f"caselaw.nationalarchives.gov.uk error: {type(exc).__name__}: {exc}"
         )
+    return exc
+
+
+def _map_govuk_http_error(exc: Exception) -> Exception:
+    """Translate an httpx 404 into a structured not_found; otherwise upstream_error."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+        return GbEliError(
+            "not_found",
+            "GOV.UK document not found at that path. Try gb_search_govuk to locate it.",
+        )
+    if isinstance(exc, (httpx.HTTPStatusError, httpx.TransportError, httpx.TimeoutException)):
+        return GbEliError("upstream_error", f"www.gov.uk error: {type(exc).__name__}: {exc}")
     return exc
 
 
@@ -735,6 +774,236 @@ async def gb_get_case(reference: str) -> CaseLawDocument:
 
     audit.log(
         tool="gb_get_case",
+        input_hash=input_hash,
+        output_count_or_size=doc.byte_size or 0,
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# gb_search_govuk
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def gb_search_govuk(
+    query: str | None = None,
+    document_type: str | None = None,
+    organisation: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    limit: int = 20,
+    start: int = 0,
+) -> GovUkSearchResult:
+    """Search GOV.UK documents - tribunal decisions, HMRC manuals, CMA cases and more.
+
+    Maps to the GOV.UK Search API (``www.gov.uk/api/search.json`` - confirmed live
+    2026-07-07: keyless, Open Government Licence v3.0). One upstream aggregating many
+    institutions; filter with ``document_type``. Legally weighty types with live-verified
+    totals (2026-07-07): ``employment_tribunal_decision`` (132,162),
+    ``hmrc_manual_section`` (85,315), ``residential_property_tribunal_decision``
+    (17,088), ``employment_appeal_tribunal_decision`` (2,571), ``cma_case`` (2,565),
+    ``utaac_decision`` (2,031), ``tax_tribunal_decision`` (1,414),
+    ``asylum_support_decision`` (101).
+
+    Args:
+        query: full-text search terms.
+        document_type: GOV.UK ``content_store_document_type`` slug (see above).
+        organisation: GOV.UK organisation slug, e.g. ``"competition-and-markets-authority"``.
+        from_date: ISO 8601 date (YYYY-MM-DD), inclusive - passed server-side via
+            ``filter_public_timestamp`` (unlike Find Case Law, GOV.UK supports this).
+        to_date: ISO 8601 date (YYYY-MM-DD), inclusive. Same server-side filter.
+        limit: max items to return (1..100).
+        start: result offset for pagination (0-based).
+
+    Returns:
+        ``GovUkSearchResult`` with the API's own ``total`` and
+        ``items: list[GovUkDocumentInfo]``.
+    """
+    audit = _audit()
+    input_hash = hash_input(
+        {
+            "query": query,
+            "document_type": document_type,
+            "organisation": organisation,
+            "from_date": from_date,
+            "to_date": to_date,
+            "limit": limit,
+            "start": start,
+        }
+    )
+    base = _govuk_base_url()
+
+    if not 1 <= limit <= 100:
+        raise GbEliError("invalid_arg", f"limit={limit} out of range 1..100.")
+    if start < 0:
+        raise GbEliError("invalid_arg", f"start={start} must be >= 0.")
+    for label, value in (("from_date", from_date), ("to_date", to_date)):
+        if value is not None and (len(value) < 10 or value[4] != "-" or value[7] != "-"):
+            raise GbEliError("invalid_arg", f"{label}={value!r} must be ISO 8601 (YYYY-MM-DD).")
+
+    timestamp_filter: str | None = None
+    if from_date or to_date:
+        parts = []
+        if from_date:
+            parts.append(f"from:{from_date}")
+        if to_date:
+            parts.append(f"to:{to_date}")
+        timestamp_filter = ",".join(parts)
+
+    params: dict[str, Any] = {
+        "q": query,
+        "filter_content_store_document_type": document_type,
+        "filter_organisations": organisation,
+        "filter_public_timestamp": timestamp_filter,
+        "count": limit,
+        "start": start if start > 0 else None,
+        "order": "-public_timestamp" if not query else None,
+        "fields": "title,link,description,public_timestamp,content_store_document_type,organisations",
+    }
+
+    with timer() as t:
+        try:
+            async with GovUkSearchClient(base_url=base) as client:
+                raw = await client.search_json(dict(params))
+        except Exception as exc:
+            audit.log(
+                tool="gb_search_govuk",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_govuk_http_error(exc) from exc
+
+    try:
+        total, items_raw = parse_govuk_search_json(raw)
+    except ValueError as exc:
+        audit.log(
+            tool="gb_search_govuk",
+            input_hash=input_hash,
+            output_count_or_size=0,
+            duration_ms=t.duration_ms,
+            status="error",
+            error=str(exc),
+        )
+        raise GbEliError("upstream_error", str(exc)) from exc
+
+    items: list[GovUkDocumentInfo] = []
+    for raw_item in items_raw:
+        enriched = dict(raw_item)
+        enriched["human_readable_citation"] = human_readable_govuk_citation(
+            raw_item.get("title"), raw_item.get("document_type"), raw_item.get("public_timestamp")
+        )
+        items.append(GovUkDocumentInfo.model_validate(enriched))
+
+    result = GovUkSearchResult(
+        total=total,
+        items=items,
+        query_echo=GovUkSearchQuery(
+            query=query,
+            document_type=document_type,
+            organisation=organisation,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            start=start,
+        ),
+    )
+
+    audit.log(
+        tool="gb_search_govuk",
+        input_hash=input_hash,
+        output_count_or_size=len(items),
+        duration_ms=t.duration_ms,
+        status="ok",
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# gb_get_govuk_content
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool(annotations=READ_ONLY)
+async def gb_get_govuk_content(path: str) -> GovUkContent:
+    """Fetch one GOV.UK document (tribunal decision, HMRC manual section, CMA case).
+
+    Maps to the GOV.UK Content API (``www.gov.uk/api/content/{path}`` - confirmed live
+    2026-07-07). Tribunal decisions carry the judgment as a PDF in ``attachments`` with
+    only a short HTML body; HMRC manual sections carry the full text in ``body_html``.
+
+    Args:
+        path: the document's site path - take it from a ``gb_search_govuk`` result's
+            ``link`` field, e.g.
+            ``"/employment-tribunal-decisions/mr-b-king-v-thales-dis-uk-ltd-1403603-slash-2020"``
+            or ``"/hmrc-internal-manuals/vat-government-and-public-bodies/vatgpb9700"``.
+            A full ``www.gov.uk`` URL is also accepted.
+
+    Returns:
+        ``GovUkContent`` with ``human_readable_citation``, ``source_url``, ``body_html``
+        and ``attachments``.
+    """
+    audit = _audit()
+    input_hash = hash_input({"path": path})
+    base = _govuk_base_url()
+
+    raw_path = path.strip()
+    if raw_path.startswith("http://") or raw_path.startswith("https://"):
+        after_scheme = raw_path.split("://", 1)[1]
+        raw_path = "/" + (after_scheme.split("/", 1)[1] if "/" in after_scheme else "")
+    if not raw_path.startswith("/"):
+        raw_path = "/" + raw_path
+    raw_path = raw_path.removeprefix("/api/content")
+    if raw_path in ("", "/"):
+        raise GbEliError("invalid_arg", f"path={path!r} is not a GOV.UK content path.")
+
+    with timer() as t:
+        try:
+            async with GovUkSearchClient(base_url=base) as client:
+                raw = await client.get_content_json(raw_path)
+        except Exception as exc:
+            audit.log(
+                tool="gb_get_govuk_content",
+                input_hash=input_hash,
+                output_count_or_size=0,
+                duration_ms=t.duration_ms if t.duration_ms else 0,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
+            raise _map_govuk_http_error(exc) from exc
+
+    try:
+        parsed = parse_govuk_content_json(raw)
+    except ValueError as exc:
+        audit.log(
+            tool="gb_get_govuk_content",
+            input_hash=input_hash,
+            output_count_or_size=0,
+            duration_ms=t.duration_ms,
+            status="error",
+            error=str(exc),
+        )
+        raise GbEliError("upstream_error", str(exc)) from exc
+
+    parsed["human_readable_citation"] = human_readable_govuk_citation(
+        parsed.get("title"),
+        parsed.get("document_type"),
+        parsed.get("first_published_at") or parsed.get("public_updated_at"),
+    )
+    parsed.setdefault("source_url", f"{base}{raw_path}")
+    body = parsed.get("body_html")
+    if isinstance(body, str):
+        parsed["byte_size"] = len(body.encode("utf-8"))
+
+    doc = GovUkContent.model_validate(parsed)
+
+    audit.log(
+        tool="gb_get_govuk_content",
         input_hash=input_hash,
         output_count_or_size=doc.byte_size or 0,
         duration_ms=t.duration_ms,

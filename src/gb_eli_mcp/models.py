@@ -177,6 +177,101 @@ class CaseLawSearchResult(_Tolerant):
     dataset_note: str = CASE_LAW_DATASET_NOTE
 
 
+# --- GOV.UK documents (Search API + Content API on www.gov.uk) ---------------------
+
+GOVUK_DATASET_NOTE = (
+    "www.gov.uk Search API + Content API (keyless, Crown copyright, Open Government "
+    "Licence v3.0) - one upstream aggregating many institutions' documents: employment "
+    "tribunal decisions, employment appeal tribunal decisions, tax tribunal decisions, "
+    "Upper Tribunal (AAC) decisions, residential property tribunal decisions, HMRC "
+    "internal manuals, CMA competition cases and more (filter by document_type). "
+    "GOV.UK documents have no neutral-citation or ELI scheme; human_readable_citation "
+    "is '{Title} ({document type}, {date}, GOV.UK)'. Tribunal decisions carry the "
+    "judgment as a PDF attachment with a short HTML body; HMRC manual sections carry "
+    "the full text in body_html."
+)
+
+
+class GovUkDocumentInfo(_Tolerant):
+    """Lightweight GOV.UK document record - from a Search API result."""
+
+    title: str | None = None
+    description: str | None = None
+    link: str | None = None  # site-relative content path, key for gb_get_govuk_content
+    document_type: str | None = None
+    public_timestamp: str | None = None
+    organisations: list[str] | None = None
+
+    # Enrichments added by our server (Art. 4 CONSTITUTION parity for GOV.UK).
+    human_readable_citation: str | None = None
+    source_url: str | None = None
+
+
+class GovUkSearchQuery(_Tolerant):
+    """Arguments for the ``gb_search_govuk`` tool."""
+
+    query: str | None = None
+    document_type: str | None = Field(
+        default=None,
+        description=(
+            "GOV.UK content_store_document_type slug, e.g. 'employment_tribunal_decision', "
+            "'employment_appeal_tribunal_decision', 'tax_tribunal_decision', "
+            "'utaac_decision', 'residential_property_tribunal_decision', "
+            "'asylum_support_decision', 'hmrc_manual_section', 'cma_case'. "
+            "Omit to search all of GOV.UK."
+        ),
+    )
+    organisation: str | None = Field(
+        default=None,
+        description="GOV.UK organisation slug, e.g. 'competition-and-markets-authority'.",
+    )
+    from_date: str | None = Field(
+        default=None,
+        description="ISO 8601 date (YYYY-MM-DD), inclusive - server-side filter.",
+    )
+    to_date: str | None = Field(
+        default=None,
+        description="ISO 8601 date (YYYY-MM-DD), inclusive - server-side filter.",
+    )
+    limit: int = Field(default=20, ge=1, le=100)
+    start: int = Field(default=0, ge=0, description="Result offset for pagination.")
+
+
+class GovUkSearchResult(_Tolerant):
+    """Result of ``gb_search_govuk``."""
+
+    total: int
+    items: list[GovUkDocumentInfo] = Field(default_factory=list)
+    query_echo: GovUkSearchQuery | None = None
+    dataset_note: str = GOVUK_DATASET_NOTE
+
+
+class GovUkAttachment(_Tolerant):
+    """An attachment on a GOV.UK document (e.g. a tribunal judgment PDF)."""
+
+    title: str | None = None
+    url: str | None = None
+    content_type: str | None = None
+
+
+class GovUkContent(_Tolerant):
+    """Result of ``gb_get_govuk_content``."""
+
+    title: str | None = None
+    description: str | None = None
+    document_type: str | None = None
+    base_path: str | None = None
+    first_published_at: str | None = None
+    public_updated_at: str | None = None
+    body_html: str | None = None
+    attachments: list[GovUkAttachment] = Field(default_factory=list)
+
+    human_readable_citation: str
+    source_url: str
+    byte_size: int | None = None
+    dataset_note: str = GOVUK_DATASET_NOTE
+
+
 class CaseLawDocument(_Tolerant):
     """Result of ``gb_get_case``."""
 

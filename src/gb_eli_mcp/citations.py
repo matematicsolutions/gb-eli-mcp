@@ -35,6 +35,7 @@ Citation contract (Art. 4 CONSTITUTION):
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -453,6 +454,135 @@ def parse_caselaw_feed(atom_text: str) -> tuple[int, list[dict[str, Any]]]:
 
     total_estimate = last_pages * per_page
     return total_estimate, items
+
+
+# ---------------------------------------------------------------------------
+# GOV.UK Search API + Content API (www.gov.uk/api/search.json, /api/content/...)
+#
+# One upstream aggregating many institutions' documents: employment tribunal
+# decisions, employment appeal tribunal decisions, tax tribunal decisions,
+# Upper Tribunal (AAC) decisions, residential property tribunal decisions,
+# HMRC internal manuals and CMA competition cases. Confirmed live 2026-07-07:
+# keyless JSON with a dedicated `total` field. Content is Crown copyright,
+# published under the Open Government Licence v3.0 (site-wide licence).
+# ---------------------------------------------------------------------------
+
+GOVUK_BASE_URL = "https://www.gov.uk"
+
+
+def parse_govuk_search_json(json_text: str) -> tuple[int, list[dict[str, Any]]]:
+    """Parse a GOV.UK Search API response into ``(total, items)``.
+
+    Unlike the two Atom feeds above, GOV.UK exposes a REAL grand total in a dedicated
+    ``total`` field (verified live 2026-07-07 against the per-type facet counts) - no
+    page-count estimation needed.
+    """
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse GOV.UK Search API JSON: {exc}") from exc
+    if not isinstance(data, dict) or "results" not in data:
+        raise ValueError("GOV.UK Search API JSON has no 'results' field.")
+
+    total = int(data.get("total") or 0)
+    items: list[dict[str, Any]] = []
+    for res in data.get("results") or []:
+        if not isinstance(res, dict):
+            continue
+        item: dict[str, Any] = {
+            "title": res.get("title"),
+            "description": res.get("description"),
+            "link": res.get("link"),
+            "document_type": res.get("content_store_document_type"),
+            "public_timestamp": res.get("public_timestamp"),
+        }
+        orgs = res.get("organisations")
+        if isinstance(orgs, list):
+            names = [o.get("title") for o in orgs if isinstance(o, dict) and o.get("title")]
+            if names:
+                item["organisations"] = names
+        link = item.get("link")
+        if isinstance(link, str) and link:
+            item["source_url"] = (
+                link if link.startswith("http") else f"{GOVUK_BASE_URL}{link}"
+            )
+        items.append({k: v for k, v in item.items() if v is not None})
+    return total, items
+
+
+def parse_govuk_content_json(json_text: str) -> dict[str, Any]:
+    """Parse a GOV.UK Content API response into a flat metadata + body dict.
+
+    Extracts ``title``, ``document_type``, ``public_updated_at``, ``first_published_at``,
+    the HTML ``body`` from ``details`` and any ``attachments`` (title/url/content_type) -
+    tribunal decisions on GOV.UK carry the judgment as a PDF attachment with a short
+    HTML body, HMRC manual sections carry the full text in the body (verified live
+    2026-07-07). Tolerant: missing fields are simply omitted.
+    """
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Could not parse GOV.UK Content API JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("GOV.UK Content API JSON is not an object.")
+
+    out: dict[str, Any] = {}
+    for key in ("title", "description", "document_type", "base_path",
+                "public_updated_at", "first_published_at"):
+        value = data.get(key)
+        if value:
+            out[key] = value
+
+    details = data.get("details")
+    if isinstance(details, dict):
+        body = details.get("body")
+        if isinstance(body, str) and body:
+            out["body_html"] = body
+        elif isinstance(body, list):
+            # Some content schemas (e.g. HMRC manual sections) hold a list of
+            # {content_type, content} parts - take the html one.
+            for part in body:
+                if isinstance(part, dict) and part.get("content_type") == "text/html":
+                    out["body_html"] = part.get("content")
+                    break
+        attachments = details.get("attachments")
+        if isinstance(attachments, list):
+            out["attachments"] = [
+                {
+                    "title": a.get("title"),
+                    "url": a.get("url"),
+                    "content_type": a.get("content_type"),
+                }
+                for a in attachments
+                if isinstance(a, dict) and a.get("url")
+            ]
+        metadata = details.get("metadata")
+        if isinstance(metadata, dict):
+            for key in ("tribunal_decision_country", "tribunal_decision_categories",
+                        "tribunal_decision_decision_date", "hearing_date",
+                        "opened_date", "closed_date", "case_state", "case_type"):
+                if metadata.get(key):
+                    out[key] = metadata[key]
+
+    base_path = data.get("base_path")
+    if isinstance(base_path, str) and base_path:
+        out["source_url"] = f"{GOVUK_BASE_URL}{base_path}"
+    return out
+
+
+def human_readable_govuk_citation(
+    title: str | None, document_type: str | None, date: str | None
+) -> str:
+    """Human-readable citation for a GOV.UK document.
+
+    GOV.UK documents have no neutral-citation convention; the honest citation is
+    "{Title} ({document type label}, {date}, GOV.UK)".
+    """
+    label = title or "Untitled GOV.UK document"
+    type_label = (document_type or "").replace("_", " ").strip()
+    day = (date or "")[:10]
+    qualifier = ", ".join(p for p in (type_label, day) if p)
+    return f"{label} ({qualifier}, GOV.UK)" if qualifier else f"{label} (GOV.UK)"
 
 
 def parse_search_feed(atom_text: str) -> tuple[int, list[dict[str, Any]]]:

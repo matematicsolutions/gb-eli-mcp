@@ -26,7 +26,7 @@ contract against the UK's own source.
 > and adapting with attribution. This connector only relays that public content, with a
 > `source_url` on every response.
 
-## The six tools
+## The eight tools
 
 | Tool | What it does |
 |---|---|
@@ -36,6 +36,28 @@ contract against the UK's own source.
 | `gb_recent_legislation` | Legislation published since a date, newest-first, optionally by doc type. |
 | `gb_search_case_law` | Search UK judgments via The National Archives' Find Case Law Atom feed, by text, court, and date range. |
 | `gb_get_case` | Fetch a judgment by neutral citation, Find Case Law URI/path, or opaque id - returns Akoma Ntoso XML, or a PDF link fallback. |
+| `gb_search_govuk` | Search GOV.UK documents via the keyless Search API - employment/tax/property tribunal decisions, HMRC internal manuals, CMA cases - with server-side date filters and real totals. |
+| `gb_get_govuk_content` | Fetch one GOV.UK document via the Content API - tribunal decisions return the judgment PDF link, HMRC manual sections return the full text. |
+
+### GOV.UK coverage (added v0.3.0, feature-003)
+
+One upstream, many institutions: `gb_search_govuk` filters by `document_type`.
+Live-verified totals (2026-07-07, from the Search API's own `total`/facet fields -
+probe: `https://www.gov.uk/api/search.json?count=0&facet_content_store_document_type=1000`):
+
+| `document_type` | Documents |
+|---|---|
+| `employment_tribunal_decision` | 132,162 |
+| `hmrc_manual_section` | 85,315 |
+| `residential_property_tribunal_decision` | 17,088 |
+| `employment_appeal_tribunal_decision` | 2,571 |
+| `cma_case` | 2,565 |
+| `utaac_decision` (Upper Tribunal, AAC) | 2,031 |
+| `tax_tribunal_decision` | 1,414 |
+| `asylum_support_decision` | 101 |
+
+See `SOURCES.md` for the full per-source ledger, including what was scouted and
+deliberately rejected (ICO, FCA, IAC) and why.
 
 Every response carries the contract: `eli_uri`
 (e.g. `https://www.legislation.gov.uk/id/ukpga/2018/12`), `human_readable_citation`
@@ -65,6 +87,8 @@ Copy `.mcp.json.example` and adjust if needed:
 Environment:
 
 - `GB_ELI_BASE_URL` - default `https://www.legislation.gov.uk`
+- `GB_ELI_CASELAW_BASE_URL` - default `https://caselaw.nationalarchives.gov.uk`
+- `GB_ELI_GOVUK_BASE_URL` - default `https://www.gov.uk`
 - `GB_ELI_CACHE_DIR` - default `~/.matematic/cache/gb-eli`
 - `GB_ELI_AUDIT_DIR` - default `~/.matematic/audit`
 
@@ -88,8 +112,10 @@ See `CONSTITUTION.md` (the binding rules) and `DISCOVERY.md` (the live API probe
 pip install -e ".[dev]"
 pytest tests/test_instructions_drift.py -v   # offline
 pytest tests/test_citations_case_law.py -v   # offline
+pytest tests/test_citations_govuk.py -v      # offline
 pytest tests/test_smoke.py -v                # hits live legislation.gov.uk
 pytest tests/test_smoke_case_law.py -v       # hits live caselaw.nationalarchives.gov.uk
+pytest tests/test_smoke_govuk.py -v          # hits live www.gov.uk
 ```
 
 ## Licence

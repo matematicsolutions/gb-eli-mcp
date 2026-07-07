@@ -26,11 +26,14 @@ SAMPLE_FEED = """<?xml version="1.0" encoding="utf-8"?>
     <author><name>High Court (Administrative Court)</name></author>
     <id>https://caselaw.nationalarchives.gov.uk/id/d-12345678-1234-1234-1234-123456789012</id>
     <tna:contenthash>abc123</tna:contenthash>
-    <link href="https://caselaw.nationalarchives.gov.uk/ewhc/admin/2026/1658/data.xml" rel="alternate" type="application/akn+xml"/>
-    <tna:identifier slug="ewhc/admin/2026/1658" type="ukncn">[2026] EWHC 1658 (Admin)</tna:identifier>
+    <link href="https://caselaw.nationalarchives.gov.uk/ewhc/admin/2026/1658/data.xml"
+          rel="alternate" type="application/akn+xml"/>
+    <tna:identifier slug="ewhc/admin/2026/1658"
+                    type="ukncn">[2026] EWHC 1658 (Admin)</tna:identifier>
     <tna:identifier slug="tna.abc123" type="fclid">abc123</tna:identifier>
     <tna:uri>d-12345678-1234-1234-1234-123456789012</tna:uri>
-    <link href="https://assets.caselaw.nationalarchives.gov.uk/abc/abc.pdf" rel="alternate" type="application/pdf"/>
+    <link href="https://assets.caselaw.nationalarchives.gov.uk/abc/abc.pdf"
+          rel="alternate" type="application/pdf"/>
   </entry>
 </feed>
 """
@@ -91,7 +94,10 @@ def test_human_readable_case_citation() -> None:
         human_readable_case_citation("[2026] EWHC 1658 (Admin)", "Example v Another Example")
         == "Example v Another Example [2026] EWHC 1658 (Admin)"
     )
-    assert human_readable_case_citation("[2026] EWHC 1658 (Admin)", None) == "[2026] EWHC 1658 (Admin)"
+    assert (
+        human_readable_case_citation("[2026] EWHC 1658 (Admin)", None)
+        == "[2026] EWHC 1658 (Admin)"
+    )
     assert human_readable_case_citation(None, None) == "Unknown case"
 
 
