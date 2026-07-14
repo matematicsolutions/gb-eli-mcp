@@ -28,6 +28,7 @@ import httpx
 from fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from . import runtime
 from .audit import AuditLogger, hash_input, timer
 from .citations import (
     enrich_legislation_payload,
@@ -154,19 +155,19 @@ mcp: FastMCP = FastMCP(name="gb-eli-mcp", instructions=INSTRUCTIONS)
 
 
 def _base_url() -> str:
-    return os.environ.get("GB_ELI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
+    return os.environ.get("GB_ELI_BASE_URL", runtime.base_url("eli", DEFAULT_BASE_URL)).rstrip("/")
 
 
 def _caselaw_base_url() -> str:
     from .client import DEFAULT_CASELAW_BASE_URL
 
-    return os.environ.get("GB_ELI_CASELAW_BASE_URL", DEFAULT_CASELAW_BASE_URL).rstrip("/")
+    return os.environ.get("GB_ELI_CASELAW_BASE_URL", runtime.base_url("eli_caselaw", DEFAULT_CASELAW_BASE_URL)).rstrip("/")
 
 
 def _govuk_base_url() -> str:
     from .client import DEFAULT_GOVUK_BASE_URL
 
-    return os.environ.get("GB_ELI_GOVUK_BASE_URL", DEFAULT_GOVUK_BASE_URL).rstrip("/")
+    return os.environ.get("GB_ELI_GOVUK_BASE_URL", runtime.base_url("eli_govuk", DEFAULT_GOVUK_BASE_URL)).rstrip("/")
 
 
 def _audit() -> AuditLogger:
