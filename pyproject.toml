@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gb-eli-mcp"
-version = "0.3.0"
+version = "0.3.1"
 description = "MCP server for UK legislation (legislation.gov.uk), case law (Find Case Law) and GOV.UK tribunal decisions, HMRC manuals and CMA cases — with persistent identifiers and verifiable citations."
 readme = "README.md"
 license = { text = "Apache-2.0" }
