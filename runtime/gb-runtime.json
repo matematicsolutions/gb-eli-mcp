@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "generated_note": "Volatile runtime config for gb-eli-mcp. Edit + re-run the release workflow to repoint endpoints or bump the citation grammar WITHOUT a PyPI release. Consumed lazily on first tool call; falls back to the hardcoded defaults in the client modules if unavailable (offline-safe).",
+  "base_urls": {
+    "eli": "https://www.legislation.gov.uk",
+    "eli_caselaw": "https://caselaw.nationalarchives.gov.uk",
+    "eli_govuk": "https://www.gov.uk"
+  },
+  "citation_grammar_version": "gb-eli/2026.07"
+}
