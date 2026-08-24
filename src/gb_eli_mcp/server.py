@@ -101,6 +101,7 @@ This MCP server exposes legislation.gov.uk, The National Archives' official port
 
 ## Hard constraints
 
+- **Do not answer past the edge of this corpus** - when a search comes back empty, or the question touches material this connector does not carry, call `gb_coverage` and relay what it says is missing. Absence here is not absence in the law.
 - **UK document-type codes are the key to a reference** - a reference is `{doc_type}/{year}/{number}`, e.g. `ukpga/2018/12` (UK Public General Act), `uksi/2019/419` (UK Statutory Instrument), `asp/2015/1` (Act of the Scottish Parliament), `nia/2016/8` (Act of the Northern Ireland Assembly), `wsi/2020/1` (Wales Statutory Instrument). Do not invent a reference; get it from `gb_search` or from a response's `eli_uri`.
 - **Every response has `human_readable_citation` + `source_url`** - cite both to the user (e.g. "Data Protection Act 2018 c. 12").
 - **No modification of official text** - the act/instrument is returned verbatim from legislation.gov.uk.
