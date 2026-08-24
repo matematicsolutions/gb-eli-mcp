@@ -38,6 +38,7 @@ contract against the UK's own source.
 | `gb_get_case` | Fetch a judgment by neutral citation, Find Case Law URI/path, or opaque id - returns Akoma Ntoso XML, or a PDF link fallback. |
 | `gb_search_govuk` | Search GOV.UK documents via the keyless Search API - employment/tax/property tribunal decisions, HMRC internal manuals, CMA cases - with server-side date filters and real totals. |
 | `gb_get_govuk_content` | Fetch one GOV.UK document via the Content API - tribunal decisions return the judgment PDF link, HMRC manual sections return the full text. |
+| `gb_coverage` | Declare what this connector covers, when each family was captured, and - explicitly - what it does NOT cover. Every gap carries a fallback. |
 
 ### GOV.UK coverage (added v0.3.0, feature-003)
 
