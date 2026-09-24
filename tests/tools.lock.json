@@ -1,0 +1,1780 @@
+{
+  "package_version": "0.5.3",
+  "tools": {
+    "gb_coverage": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Declare what this connector covers, how it is sourced, and what it does NOT cover.\n\nCall this before telling a user that the law \"does not contain\" something, and whenever\na search comes back empty: the absence may be a gap in this connector rather than in the\nlaw. Every gap carries a fallback saying where to look instead.\n\nReturns:\n    ``Coverage`` with families, an as-of note, and a non-empty list of known gaps.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_coverage",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "What this connector covers, how it is sourced, and what it does not cover.",
+          "properties": {
+            "as_of_note": {
+              "description": "States what the dates mean, and what they do not promise.",
+              "type": "string"
+            },
+            "families": {
+              "items": {
+                "additionalProperties": true,
+                "description": "One data family this connector exposes.",
+                "properties": {
+                  "captured_at": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null,
+                    "description": "Date this family was last captured (ISO). None when queried live."
+                  },
+                  "live": {
+                    "default": true,
+                    "description": "True when queried live instead of from a snapshot.",
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "description": "Data family, e.g. 'Federal legislation'.",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Official source the data comes from.",
+                    "type": "string"
+                  },
+                  "tool": {
+                    "description": "Tool or tools that reach this family.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "tool",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "known_gaps": {
+              "description": "Never empty. An empty list would mean 'not checked', not 'no gaps'.",
+              "items": {
+                "additionalProperties": true,
+                "description": "A known, named hole in this connector's coverage - plus the way around it.",
+                "properties": {
+                  "fallback": {
+                    "description": "Where to go instead.",
+                    "type": "string"
+                  },
+                  "family": {
+                    "description": "Which family the gap belongs to.",
+                    "type": "string"
+                  },
+                  "id": {
+                    "description": "Stable gap identifier.",
+                    "type": "string"
+                  },
+                  "missing": {
+                    "description": "What is NOT available through this connector.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "family",
+                  "missing",
+                  "fallback"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "status": {
+              "default": "ok",
+              "enum": [
+                "ok",
+                "degraded",
+                "failed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "as_of_note"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "adf210f4fd8f242509e13a0bcbcd85acc42abd58662681060f6127eeb3979775"
+    },
+    "gb_get_act": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch UK legislation metadata from legislation.gov.uk by reference.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "reference": {
+              "description": "a reference like ``\"ukpga/2018/12\"`` (Data Protection Act 2018),\n``\"uksi/2019/419\"``, ``\"asp/2015/1\"``, or a full legislation.gov.uk URL.\nAn optional point-in-time date suffix (``/2026-06-19``) selects a specific\nrevised version.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_get_act",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Full legislation metadata record - GET .../data.xml.",
+          "properties": {
+            "dataset_note": {
+              "default": "legislation.gov.uk has no native /eli/ namespace; eli_uri carries the UK's own persistent identifier URI (id.../{type}/{year}/{number}) instead of a fabricated ELI path. Revised ('as amended') text reflects the effective date shown in restrict_start_date; always check for in-force / pending amendments.",
+              "type": "string"
+            },
+            "date_modified": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "doc_type": {
+              "type": "string"
+            },
+            "document_category": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "document_main_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "document_status": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "eli_uri": {
+              "type": "string"
+            },
+            "enactment_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "human_readable_citation": {
+              "type": "string"
+            },
+            "isbn": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "made_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "number": {
+              "type": "string"
+            },
+            "publisher": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "restrict_extent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "restrict_start_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "year": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "doc_type",
+            "year",
+            "number",
+            "eli_uri",
+            "human_readable_citation",
+            "source_url"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "432edc532c9fa099a74e0381e1aa1f0b2054c69659a994885311af27b144229f"
+    },
+    "gb_get_case": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch a UK judgment from The National Archives' Find Case Law service.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "reference": {
+              "description": "a neutral citation (e.g. ``\"[2026] EWHC 1698 (Admin)\"``), a Find Case\nLaw URI/path (e.g. ``\"ewhc/admin/2026/1698\"`` or a full\n``caselaw.nationalarchives.gov.uk`` URL), or an opaque ``\"d-{uuid}\"`` id.\nNeutral citations resolve directly to a URI only for pre-April-2025 documents\n(``/{court}/{year}/{number}``); for later documents (opaque id), use\n`gb_search_case_law` first to find the ``uri``.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_get_case",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_get_case``.",
+          "properties": {
+            "byte_size": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "content": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "court": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "dataset_note": {
+              "default": "caselaw.nationalarchives.gov.uk (Find Case Law, The National Archives) publishes judgments under the Open Justice Licence - a separate service from legislation.gov.uk (different host, no shared identifier scheme). Pre-April-2025 documents have a derivable URI ('/{court}/{year}/{number}'); documents from April 2025 onward use an opaque 'd-{uuid}' URI (fclid) that cannot be derived from the neutral citation alone. human_readable_citation is the neutral citation, e.g. '[2026] EWHC 1698 (Admin)'.",
+              "type": "string"
+            },
+            "date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "format": {
+              "default": "akn",
+              "enum": [
+                "akn",
+                "pdf"
+              ],
+              "type": "string"
+            },
+            "human_readable_citation": {
+              "type": "string"
+            },
+            "neutral_citation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "pdf_url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "human_readable_citation",
+            "source_url"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "5608b96c8d966066be781d45fc94821ebb47886b541733fde5ae83a0651b53ad"
+    },
+    "gb_get_govuk_content": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch one GOV.UK document (tribunal decision, HMRC manual section, CMA case).\n\nMaps to the GOV.UK Content API (``www.gov.uk/api/content/{path}`` - confirmed live\n2026-07-07). Tribunal decisions carry the judgment as a PDF in ``attachments`` with\nonly a short HTML body; HMRC manual sections carry the full text in ``body_html``.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "description": "the document's site path - take it from a ``gb_search_govuk`` result's\n``link`` field, e.g.\n``\"/employment-tribunal-decisions/mr-b-king-v-thales-dis-uk-ltd-1403603-slash-2020\"``\nor ``\"/hmrc-internal-manuals/vat-government-and-public-bodies/vatgpb9700\"``.\nA full ``www.gov.uk`` URL is also accepted.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_get_govuk_content",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_get_govuk_content``.",
+          "properties": {
+            "attachments": {
+              "items": {
+                "additionalProperties": true,
+                "description": "An attachment on a GOV.UK document (e.g. a tribunal judgment PDF).",
+                "properties": {
+                  "content_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "base_path": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "body_html": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "byte_size": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "dataset_note": {
+              "default": "www.gov.uk Search API + Content API (keyless, Crown copyright, Open Government Licence v3.0) - one upstream aggregating many institutions' documents: employment tribunal decisions, employment appeal tribunal decisions, tax tribunal decisions, Upper Tribunal (AAC) decisions, residential property tribunal decisions, HMRC internal manuals, CMA competition cases and more (filter by document_type). GOV.UK documents have no neutral-citation or ELI scheme; human_readable_citation is '{Title} ({document type}, {date}, GOV.UK)'. Tribunal decisions carry the judgment as a PDF attachment with a short HTML body; HMRC manual sections carry the full text in body_html.",
+              "type": "string"
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "document_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "first_published_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "human_readable_citation": {
+              "type": "string"
+            },
+            "public_updated_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "human_readable_citation",
+            "source_url"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "2bb9a3a4e55d53485c3a1ec3b659839de740a2ba61a9d9ff042fe07f1ef353d3"
+    },
+    "gb_get_text": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Fetch the full text of UK legislation.\n\nUses legislation.gov.uk's content-negotiation path suffix (``/data.{format}``) -\n``xml`` (the site's own ``legislation.xsd`` schema), ``html``, ``akn`` (Akoma Ntoso),\n``rdf``, ``pdf``, or ``csv``.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "format": {
+              "default": "html",
+              "description": "one of ``\"xml\"``, ``\"html\"``, ``\"akn\"``, ``\"rdf\"``, ``\"pdf\"``, ``\"csv\"``.",
+              "enum": [
+                "xml",
+                "html",
+                "akn",
+                "rdf",
+                "pdf",
+                "csv"
+              ],
+              "type": "string"
+            },
+            "reference": {
+              "description": "reference of the act/instrument (work or point-in-time expression).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reference"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_get_text",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_get_text``.",
+          "properties": {
+            "byte_size": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "content": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "dataset_note": {
+              "default": "legislation.gov.uk has no native /eli/ namespace; eli_uri carries the UK's own persistent identifier URI (id.../{type}/{year}/{number}) instead of a fabricated ELI path. Revised ('as amended') text reflects the effective date shown in restrict_start_date; always check for in-force / pending amendments.",
+              "type": "string"
+            },
+            "eli_uri": {
+              "type": "string"
+            },
+            "format": {
+              "enum": [
+                "xml",
+                "html",
+                "akn",
+                "rdf",
+                "pdf",
+                "csv"
+              ],
+              "type": "string"
+            },
+            "human_readable_citation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "source_url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "eli_uri",
+            "source_url",
+            "format"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "12fb0a1dcd93388001cfc92cf5f16e6800a061dbdf8f784c50ff89f1beab039a"
+    },
+    "gb_recent_legislation": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "UK legislation published since ``since_iso`` (ISO 8601 date), newest-first.\n\nMaps to the Atom search feed sorted/filtered by publication year, optionally scoped\nto one ``doc_type``. legislation.gov.uk's public search feed does not support a\ngeneric ``dateFrom`` filter across all types, so this tool filters the requested\nyear's feed by the ``published`` date client-side.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "doc_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "restrict to one UK document-type code (e.g. ``\"ukpga\"``, ``\"uksi\"``)."
+            },
+            "limit": {
+              "default": 20,
+              "description": "max items to return (1..100).",
+              "type": "integer"
+            },
+            "since_iso": {
+              "description": "a date in ISO 8601 (e.g. ``\"2026-01-01\"``). Only the year is used to\nselect the feed to scan; items are then filtered to on/after this date.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "since_iso"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_recent_legislation",
+        "outputSchema": {
+          "properties": {
+            "result": {
+              "items": {
+                "additionalProperties": true,
+                "description": "An item from ``gb_recent_legislation``.",
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "doc_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "document_main_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "eli_uri": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "human_readable_citation": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "number": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "published": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "source_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "type": "object",
+          "x-fastmcp-wrap-result": true
+        }
+      },
+      "sha256": "b8fa02773fc29828ba18e51fb45a54076429308cac43071f0115b06984fb80ed"
+    },
+    "gb_search": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search UK legislation on legislation.gov.uk.\n\nMaps to the official Atom search feed (``/all/data.feed`` or ``/{doc_type}/data.feed``,\noptionally with ``?text=...&year=...&page=...``). Each item gets ``eli_uri``,\n``human_readable_citation``, ``source_url`` (per Art. 4 CONSTITUTION).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "query": {
+              "additionalProperties": true,
+              "description": "``SearchQuery`` - text, doc_type (e.g. 'ukpga', 'uksi', 'asp'), year, page.",
+              "properties": {
+                "doc_type": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null,
+                  "description": "Restrict to one UK document-type code, e.g. 'ukpga', 'uksi', 'asp', 'nia', 'wsi'. Omit to search all types."
+                },
+                "page": {
+                  "default": 1,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "text": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                },
+                "year": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "default": null
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_search",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_search``.",
+          "properties": {
+            "dataset_note": {
+              "default": "legislation.gov.uk has no native /eli/ namespace; eli_uri carries the UK's own persistent identifier URI (id.../{type}/{year}/{number}) instead of a fabricated ELI path. Revised ('as amended') text reflects the effective date shown in restrict_start_date; always check for in-force / pending amendments.",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "description": "Lightweight legislation record - from a search/listing item.",
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "doc_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "document_main_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "eli_uri": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "human_readable_citation": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "number": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "published": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "source_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "year": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "query_echo": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "description": "Arguments for the ``gb_search`` tool.",
+                  "properties": {
+                    "doc_type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Restrict to one UK document-type code, e.g. 'ukpga', 'uksi', 'asp', 'nia', 'wsi'. Omit to search all types."
+                    },
+                    "page": {
+                      "default": 1,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "text": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "year": {
+                      "anyOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "total_estimate": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_estimate"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "e6b2245ad01eaee780dc191a7a9313f67dc3b2e72313a4983ea5fea2257f228c"
+    },
+    "gb_search_case_law": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search UK case law on The National Archives' Find Case Law service.\n\nMaps to the public Atom feed at ``caselaw.nationalarchives.gov.uk/atom.xml``\n(confirmed live 2026-07-06 - keyless, Open Justice Licence). A separate service from\nlegislation.gov.uk: different host, different Atom dialect (``tna:`` namespace).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "court": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "court/tribunal code, e.g. ``\"ewhc/admin\"``, ``\"ewca/civ\"``, ``\"uksc\"``.\nPassed through to Find Case Law's own ``court`` query param."
+            },
+            "from_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "ISO 8601 date (YYYY-MM-DD), inclusive. Find Case Law's public API has\nno documented server-side date-range filter, so this is applied client-side\nagainst each result's ``date`` field after fetching."
+            },
+            "limit": {
+              "default": 20,
+              "description": "max items to return (1..100).",
+              "type": "integer"
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "full-text search (matches judgment text in order, per upstream docs)."
+            },
+            "to_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "ISO 8601 date (YYYY-MM-DD), inclusive. Same client-side caveat."
+            }
+          },
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_search_case_law",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_search_case_law``.",
+          "properties": {
+            "dataset_note": {
+              "default": "caselaw.nationalarchives.gov.uk (Find Case Law, The National Archives) publishes judgments under the Open Justice Licence - a separate service from legislation.gov.uk (different host, no shared identifier scheme). Pre-April-2025 documents have a derivable URI ('/{court}/{year}/{number}'); documents from April 2025 onward use an opaque 'd-{uuid}' URI (fclid) that cannot be derived from the neutral citation alone. human_readable_citation is the neutral citation, e.g. '[2026] EWHC 1698 (Admin)'.",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "description": "Lightweight case-law record - from a Find Case Law search/feed item.",
+                "properties": {
+                  "akn_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "court": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "date": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "fclid": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "human_readable_citation": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "neutral_citation": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "pdf_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "source_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "uri": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "query_echo": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "description": "Arguments for the ``gb_search_case_law`` tool.",
+                  "properties": {
+                    "court": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Court code, e.g. 'ewhc/admin', 'uksc', 'ukpc'. Omit to search all courts."
+                    },
+                    "from_date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "ISO 8601 date (YYYY-MM-DD), inclusive. Find Case Law's public API has no documented server-side date-range filter, so this is applied client-side against each result's 'date' field after fetching."
+                    },
+                    "limit": {
+                      "default": 20,
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "query": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "to_date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "ISO 8601 date (YYYY-MM-DD), inclusive."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "total_estimate": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_estimate"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "2a38a2ccf74225168b9cc2f825b6e205c213b8b43331622c59106ab65532fa65"
+    },
+    "gb_search_govuk": {
+      "descriptor": {
+        "annotations": {
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": true,
+          "readOnlyHint": true
+        },
+        "description": "Search GOV.UK documents - tribunal decisions, HMRC manuals, CMA cases and more.\n\nMaps to the GOV.UK Search API (``www.gov.uk/api/search.json`` - confirmed live\n2026-07-07: keyless, Open Government Licence v3.0). One upstream aggregating many\ninstitutions; filter with ``document_type``. Legally weighty types with live-verified\ntotals (2026-07-07): ``employment_tribunal_decision`` (132,162),\n``hmrc_manual_section`` (85,315), ``residential_property_tribunal_decision``\n(17,088), ``employment_appeal_tribunal_decision`` (2,571), ``cma_case`` (2,565),\n``utaac_decision`` (2,031), ``tax_tribunal_decision`` (1,414),\n``asylum_support_decision`` (101).",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "document_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "GOV.UK ``content_store_document_type`` slug (see above)."
+            },
+            "from_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "ISO 8601 date (YYYY-MM-DD), inclusive - passed server-side via\n``filter_public_timestamp`` (unlike Find Case Law, GOV.UK supports this)."
+            },
+            "limit": {
+              "default": 20,
+              "description": "max items to return (1..100).",
+              "type": "integer"
+            },
+            "organisation": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "GOV.UK organisation slug, e.g. ``\"competition-and-markets-authority\"``."
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "full-text search terms."
+            },
+            "start": {
+              "default": 0,
+              "description": "result offset for pagination (0-based).",
+              "type": "integer"
+            },
+            "to_date": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "ISO 8601 date (YYYY-MM-DD), inclusive. Same server-side filter."
+            }
+          },
+          "type": "object"
+        },
+        "meta": {
+          "fastmcp": {
+            "tags": []
+          }
+        },
+        "name": "gb_search_govuk",
+        "outputSchema": {
+          "additionalProperties": true,
+          "description": "Result of ``gb_search_govuk``.",
+          "properties": {
+            "dataset_note": {
+              "default": "www.gov.uk Search API + Content API (keyless, Crown copyright, Open Government Licence v3.0) - one upstream aggregating many institutions' documents: employment tribunal decisions, employment appeal tribunal decisions, tax tribunal decisions, Upper Tribunal (AAC) decisions, residential property tribunal decisions, HMRC internal manuals, CMA competition cases and more (filter by document_type). GOV.UK documents have no neutral-citation or ELI scheme; human_readable_citation is '{Title} ({document type}, {date}, GOV.UK)'. Tribunal decisions carry the judgment as a PDF attachment with a short HTML body; HMRC manual sections carry the full text in body_html.",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "additionalProperties": true,
+                "description": "Lightweight GOV.UK document record - from a Search API result.",
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "document_type": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "human_readable_citation": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "link": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "organisations": {
+                    "anyOf": [
+                      {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "public_timestamp": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "source_url": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  }
+                },
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "query_echo": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "description": "Arguments for the ``gb_search_govuk`` tool.",
+                  "properties": {
+                    "document_type": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "GOV.UK content_store_document_type slug, e.g. 'employment_tribunal_decision', 'employment_appeal_tribunal_decision', 'tax_tribunal_decision', 'utaac_decision', 'residential_property_tribunal_decision', 'asylum_support_decision', 'hmrc_manual_section', 'cma_case'. Omit to search all of GOV.UK."
+                    },
+                    "from_date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "ISO 8601 date (YYYY-MM-DD), inclusive - server-side filter."
+                    },
+                    "limit": {
+                      "default": 20,
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "organisation": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "GOV.UK organisation slug, e.g. 'competition-and-markets-authority'."
+                    },
+                    "query": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null
+                    },
+                    "start": {
+                      "default": 0,
+                      "description": "Result offset for pagination.",
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "to_date": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "ISO 8601 date (YYYY-MM-DD), inclusive - server-side filter."
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "total": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total"
+          ],
+          "type": "object"
+        }
+      },
+      "sha256": "1e4fd3cb96aa266ef79e4e84dfa3dbed50ef8341e9bed2b7316287ea6418ef70"
+    }
+  },
+  "toolset_sha256": "9b6adedf16f76a8cfc796a6606ea5f4a53546b32b837ae4ccb84064595ac76d9"
+}
