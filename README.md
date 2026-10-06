@@ -68,6 +68,16 @@ same-spirit contract (`human_readable_citation`, `source_url`, `dataset_note`) -
 
 ## Install
 
+As a Claude plugin (Claude Code or the desktop app, needs [uv](https://docs.astral.sh/uv/));
+see [plugin/README.md](plugin/README.md) for what it sends and stores:
+
+```
+/plugin marketplace add matematicsolutions/gb-eli-mcp
+/plugin install gb-eli-mcp@gb-eli-mcp
+```
+
+As a standalone server, from PyPI (`uvx gb-eli-mcp`), or from source:
+
 ```bash
 cd gb-eli-mcp
 pip install -e .
@@ -119,12 +129,16 @@ No API key. legislation.gov.uk is keyless.
 
 ## Governance
 
-- **Public data only** - read-only against legislation.gov.uk; no client data leaves the
-  machine beyond search parameters.
+- **Public data only** - read-only against legislation.gov.uk, Find Case Law and GOV.UK; no
+  client data leaves the machine beyond search parameters.
 - **Audit log** - every tool call appends one JSON line to
   `~/.matematic/audit/gb-eli-mcp.jsonl`.
-- **Vendor-neutral** - the server talks only to legislation.gov.uk and the local
-  filesystem; no LLM provider, no telemetry.
+- **Network** - the server talks to legislation.gov.uk, caselaw.nationalarchives.gov.uk,
+  www.gov.uk and the local filesystem. Once, on first use, it also fetches a small configuration
+  file (`gb-runtime.json.gz`, updated source addresses) from this repository's GitHub Releases.
+  That request carries no query content; GitHub's download counter for the file is the only
+  usage signal we see. `GB_ELI_RUNTIME_URL=""` turns it off; the Claude plugin ships with it
+  off. No LLM provider, no other telemetry.
 - **Verifiable citations** - every response is independently checkable via `source_url`.
 
 See `CONSTITUTION.md` (the binding rules) and `DISCOVERY.md` (the live API probe).
