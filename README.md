@@ -26,7 +26,7 @@ contract against the UK's own source.
 > and adapting with attribution. This connector only relays that public content, with a
 > `source_url` on every response.
 
-## The eight tools
+## The nine tools
 
 | Tool | What it does |
 |---|---|
